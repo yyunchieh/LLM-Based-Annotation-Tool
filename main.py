@@ -7,6 +7,7 @@ from langchain.chains import LLMChain
 from langchain.llms import OpenAI
 import os
 import openai
+import json
 
 # Import SAM model
 
@@ -15,7 +16,7 @@ model_type = "vit_b"
 sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
 predictor = SamPredictor(sam)
 
-
+# Load API key
 API_path = r"C:\Users\4019-tjyen\Desktop\API.txt"
 with open(API_path,"r") as file:
     openapi_key = file.read().strip()
@@ -23,11 +24,10 @@ with open(API_path,"r") as file:
 os.environ['OPENAI_API_KEY'] = openapi_key
 openai.api_key = openapi_key
 
-image_path = r"C:\Users\4019-tjyen\Desktop\cat\cat1.jpg"
+#image_path = r"C:\Users\4019-tjyen\Desktop\cat\cat1.jpg"
 
 # Initialize LLM
 llm = OpenAI(model="gpt-4o")
-
 prompt_template = PromptTemplate(
     input_variables=["object_descriptions"],
     template="""
@@ -41,18 +41,28 @@ prompt_template = PromptTemplate(
     """
 )
 
+chain = LLMChain(llm=llm, prompt=prompt_template)
+
 # Image Segmentation
 def segment_image(image_path):
-    # Load images
+    # Load and preprocess image
     image = Image.open(image_path).convert("RGB")
-    image = np.array(Image)
+    image_np = np.array(image)
     predictor.set_image(image_np)
-    mask, _, _ = predictor.predict(box=None, pount_coords=None, point_labels=None, multimask_output=True)
-
+    #mask, _, _ = predictor.predict(box=None, point_coords=None, point_labels=None, multimask_output=True)
+    #return image, masks
+    
+    try:
+        print("Calling predictor.predict...")
+        mask, _, _ = predictor.predict(box=None, point_coords=None, point_labels=None, multimask_output=True)
+        print(f"Masks returned: {masks}")
+    except Exception as e:
+        print("error")
+        mask = []
+    
     return image, masks
-
 # Descriptions Generation
-def generation_descriptions(masks):
+def generate_descriptions(masks):
     descriptions = []
     for idx, mask in enumerate(masks):
         descriptions.append(f"Object {idx + 1} with unique shape and size.")
@@ -60,22 +70,27 @@ def generation_descriptions(masks):
 
 # Streamlit APP
 def main():
-    st.title("SAM+LangChain: tools for annotation")
+    st.title("SAM+LangChain: Tools for Annotation")
 
-    # Upload Images
+    # Upload image
     uploaded_file = st.file_uploader("upload files", type=["jpg","png","jpeg"])
     if uploaded_file is not None:
-        st.image(uploaded_file, caption="uploaded images", use_column_width=True)
+        # Display uploaded image
+        st.image(uploaded_file, caption="Uploaded Image", use_container_width=True)
 
-        st.write("Segmenting images...")
+        # Run segmentation
+        st.write("Segmenting image...")
         image, masks = segment_image(uploaded_file)
 
-        st.write(f"After checking, there are {len(masks)} zones.")
+        # Display segmentation results
+        st.write(f"Detected {len(masks)} regions.")
 
+        # Generate descriptions
         descriptions = generate_descriptions(masks)
         st.write("Generated descriptions:", descriptions)
 
-        st.write("Generating the annotations...")
+        # Generate annotations with LangChain
+        st.write("Generating semantic annotations...")
         annotations = chain.run(object_descriptions=", ".join(descriptions))
         st.json(annotations)
     
