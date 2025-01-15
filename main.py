@@ -46,21 +46,50 @@ chain = LLMChain(llm=llm, prompt=prompt_template)
 # Image Segmentation
 def segment_image(image_path):
     # Load and preprocess image
-    image = Image.open(image_path).convert("RGB")
-    image_np = np.array(image)
-    predictor.set_image(image_np)
+    try:
+        image = Image.open(image_path).convert("RGB")
+        image_np = np.array(image)
+        print(f"Image loaded successfully. Shape: {image_np.shape}")
+        #predictor.set_image(image_np)
+        #print("Image successfully set for segmentation")
+    except Exception as e:
+        print(f"Error loading or setting image: {e}")
+        return None, []
     #mask, _, _ = predictor.predict(box=None, point_coords=None, point_labels=None, multimask_output=True)
     #return image, masks
     
     try:
-        print("Calling predictor.predict...")
-        mask, _, _ = predictor.predict(box=None, point_coords=None, point_labels=None, multimask_output=True)
-        print(f"Masks returned: {masks}")
+        predictor.set_image(image_np)
+        print("Image successfully set for segmentation.")
+        #print("Attempting to predict masks...")
+        #mask, _, _ = predictor.predict(box=None, point_coords=None, point_labels=None, multimask_output=True)
+        #print(f"numbers of Masks predicted: {len(masks)}")
     except Exception as e:
         print("error")
-        mask = []
+        return image_np, []
     
-    return image, masks
+    try:
+         print("Running SAM segmentation...")
+         masks, scores, logits = predictor.predict(
+            box=None,
+            point_coords=None,
+            point_labels=None,
+            multimask_output=True
+        )
+         print(f"Segmentation succeeded. Masks generated: {len(masks)}")
+    except Exception as e:
+         print(f"Error during segmentation: {e}")
+         return image_np, []
+
+    if len(masks) == 0:
+        print("No masks detected.")
+        return image_np, []
+
+    return image_np, masks
+
+    
+   
+
 # Descriptions Generation
 def generate_descriptions(masks):
     descriptions = []
@@ -82,17 +111,23 @@ def main():
         st.write("Segmenting image...")
         image, masks = segment_image(uploaded_file)
 
-        # Display segmentation results
-        st.write(f"Detected {len(masks)} regions.")
+        if image is None or len(masks) == 0:
+            st.error("Failed to process the image or no masks detected. Please try a difference image")
+            print("no masks returned")
 
-        # Generate descriptions
-        descriptions = generate_descriptions(masks)
-        st.write("Generated descriptions:", descriptions)
+        else:
+            
+            # Display segmentation results
+            st.write(f"Detected {len(masks)} regions.")
 
-        # Generate annotations with LangChain
-        st.write("Generating semantic annotations...")
-        annotations = chain.run(object_descriptions=", ".join(descriptions))
-        st.json(annotations)
+            # Generate descriptions
+            descriptions = generate_descriptions(masks)
+            st.write("Generated descriptions:", descriptions)
+
+            # Generate annotations with LangChain
+            st.write("Generating semantic annotations...")
+            annotations = chain.run(object_descriptions=", ".join(descriptions))
+            st.json(annotations)
     
 
 if __name__ == "__main__":
